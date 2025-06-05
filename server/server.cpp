@@ -1,33 +1,23 @@
-#undef UNICODE
-
-#define WIN32_LEAN_AND_MEAN
-
-#include <windows.h>
-#include <winsock2.h>
-#include <WS2tcpip.h>
-#include <iostream>
+#include "server.hpp"
 
 
-#define DEFAULT_BUF_LENGTH 512
-#define DEFAULT_PORT "27015"
 
-int main()
+
+int setUpConnection(SOCKET& ClientSocket)
 {
-
-    printf("Server started\n");
-
     WSADATA wsaData;
     int iResult;
     
     SOCKET ListenSocket = INVALID_SOCKET;
-    SOCKET ClientSocket = INVALID_SOCKET;
 
     struct addrinfo *result = NULL;
     struct addrinfo hints;
 
+    /*
     int iSendResult;
     char recvbuf[DEFAULT_BUF_LENGTH];
     int recvbuflen = DEFAULT_BUF_LENGTH;
+    */
 
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -90,31 +80,13 @@ int main()
 
     // No longer need server socket
     closesocket(ListenSocket);
+    return 0;
+}
 
-    // Receive until the peer shuts down the connection
-    do {
-        iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
-        if (iResult > 0) {
-            printf("Bytes received: %d\n", iResult);
-            printf("Received data: %.*s\n", iResult, recvbuf);
-            // Echo the buffer back to the sender
-            iSendResult = send(ClientSocket, recvbuf, iResult, 0);
-            if (iSendResult == SOCKET_ERROR) {
-                printf("send failed: %d\n", WSAGetLastError());
-                closesocket(ClientSocket);
-                WSACleanup();
-                return 1;
-            }
-            printf("Bytes sent: %d\n", iSendResult);
-        } else if (iResult == 0) {
-            printf("Connection closed\n");
-        } else {
-            printf("recv failed: %d\n", WSAGetLastError());
-        }
-    } while (iResult > 0);
-
+int closeConnection(SOCKET& ClientSocket)
+{
     // Shutdown the connection since we're done
-    iResult = shutdown(ClientSocket, SD_SEND);
+    int iResult = shutdown(ClientSocket, SD_SEND);
     if (iResult == SOCKET_ERROR) {
         printf("shutdown failed: %d\n", WSAGetLastError());
         closesocket(ClientSocket);
@@ -125,5 +97,114 @@ int main()
     // Cleanup Winsock
     closesocket(ClientSocket);
     WSACleanup();
+    return 0;
+}
+
+bool receiveMessage(SOCKET& ClientSocket, std::string& message)
+{
+    bool success = true;
+    char recvbuf[DEFAULT_BUF_LENGTH];
+    int recvbuflen = DEFAULT_BUF_LENGTH;
+    int iResult = 0;
+    while (iResult == 0)
+    {
+        iResult = recv(ClientSocket, recvbuf, recvbuflen, 0);
+        if (iResult > 0) {
+            message = std::string(recvbuf, iResult);
+        } else if (iResult == 0) {
+            Sleep(500); // Wait for 500 milliseconds before trying again
+        } else {
+            printf("recv failed: %d\n", WSAGetLastError());
+            closesocket(ClientSocket);
+            WSACleanup();
+            success = false; // Set success to false if there was an error
+        }
+    }
+
+    return success; // Return true if successful, false if there was an error
+}
+
+bool sendMessage(SOCKET ClientSocket, const char* message)
+{
+    bool success = true;
+
+    int iResult = send(ClientSocket, message, (int)strlen(message), 0);
+    if (iResult == SOCKET_ERROR) {
+        printf("send failed: %d\n", WSAGetLastError());
+        closesocket(ClientSocket);
+        WSACleanup();
+        success = false;
+    } else {
+        printf("Bytes Sent: %d\n", iResult);
+    }
+
+    return success; // Return 0 if successful, 1 if there was an error
+}
+
+/*
+int main()
+{
+    SOCKET ClientSocket = INVALID_SOCKET;
+    int result = setUpConnection(ClientSocket);
+    if (result != 0) {
+        return result;
+    }
+
+    int numBytesReceived = 0;
+    int numBytesSent = 0;
+    char recvbuf[DEFAULT_BUF_LENGTH];
+    int recvbuflen = DEFAULT_BUF_LENGTH;
+
+    // Receive until the peer shuts down the connection
+    do {
+        numBytesReceived = recv(ClientSocket, recvbuf, recvbuflen, 0);
+        if (numBytesReceived > 0) {
+            printf("Bytes received: %d\n", numBytesReceived);
+            printf("Received data: %.*s\n", numBytesReceived, recvbuf);
+            // Echo the buffer back to the sender
+            numBytesSent = send(ClientSocket, recvbuf, numBytesReceived, 0);
+            if (numBytesSent == SOCKET_ERROR) {
+                printf("send failed: %d\n", WSAGetLastError());
+                closesocket(ClientSocket);
+                WSACleanup();
+                return 1;
+            }
+            printf("Bytes sent: %d\n", numBytesSent);
+        } else if (numBytesReceived == 0) {
+            printf("Connection closed\n");
+        } else {
+            printf("recv failed: %d\n", WSAGetLastError());
+        }
+    } while (numBytesReceived > 0);
+
+    result = closeConnection(ClientSocket);
+    if (result != 0) {
+        return result;
+    }
+    return 0;
+}
+*/
+
+int main()
+{
+    SOCKET ClientSocket = INVALID_SOCKET;
+    int result = setUpConnection(ClientSocket);
+    if (result != 0) {
+        return result;
+    }
+
+    std::string message;
+    while (receiveMessage(ClientSocket, message)) {
+        std::cout << "Received: " << message << std::endl;
+        if (message == "exit") {
+            break; // Exit the loop if the message is "exit"
+        }
+    }
+
+    result = closeConnection(ClientSocket);
+    if (result != 0) {
+        return result;
+    }
+    
     return 0;
 }
